@@ -23,6 +23,7 @@ https://tensorflow.github.io/tensor2tensor/cloud_mlengine.html
 
 PROBLEM=poetry_line_problem
 USR_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/poetry/trainer
+USR_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/incrementallm/trainer
 DATA_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/t2t_data
 TMP_DIR=/tmp/t2t_tmp
 BUCKET=gvs-cs-cisco-fciannel
