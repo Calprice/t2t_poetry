@@ -1,0 +1,81 @@
+https://tensorflow.github.io/tensor2tensor/overview.html # Interesting explanation of the lifecycle of an example.
+https://github.com/tensorflow/tensor2tensor#walkthrough
+
+https://tensorflow.github.io/tensor2tensor/cloud_mlengine.html
+
+For TPU training look here:
+
+https://cloud.google.com/tpu/docs/tutorials/transformer
+
+
+# In this example we are working directly on the remote gcloud.
+
+source venvs/tensor2tensor_3/bin/activate
+cd /home/fciannel/src/tensor2tensor/tensor2tensor
+pwd
+/home/fciannel/src/tensor2tensor/tensor2tensor
+
+PROBLEM=languagemodel_ptb10k
+USR_DIR=/home/fciannel/src/tensor2tensor/tensor2tensor/data_generators
+REMOTE_DATA_DIR=lmptb10k_data
+TMP_DIR=/tmp/t2t_tmp_lmptb10k
+BUCKET=gvs-cs-cisco-fciannel
+MODEL=transformer
+HPARAMS=transformer_small
+OUTDIR=lmptb10k_out
+mkdir -p $TMP_DIR
+REMOTE_DECODE_DIR=lmptb10k_decode
+DECODE_FILE_NAME=decode_this.txt
+
+
+t2t-datagen \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --data_dir=${TMP_DIR}/data_ptb \
+ --tmp_dir=$TMP_DIR
+
+
+t2t-datagen \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+ --tmp_dir=$TMP_DIR
+
+# Train Locally
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --train_steps=250000
+
+# Train Remotely
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --train_steps=20000 \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --cloud_mlengine --worker_gpu=4
+
+
+DECODE_FILE=${TMP_DIR}/${DECODE_FILE_NAME}
+echo "I" >> $DECODE_FILE
+
+gsutil cp -r ${DECODE_FILE} gs://${BUCKET}/${REMOTE_DECODE_DIR}/${DECODE_FILE_NAME}
+
+BEAM_SIZE=4
+ALPHA=0.6
+
+t2t-decoder \
+  --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+  --problem=$PROBLEM \
+  --model=$MODEL \
+  --hparams_set=$HPARAMS \
+  --output_dir=gs://${BUCKET}/${OUTDIR} \
+  --decode_hparams="beam_size=$BEAM_SIZE,alpha=$ALPHA" \
+  --decode_from_file=gs://${BUCKET}/${REMOTE_DECODE_DIR}/${DECODE_FILE_NAME}

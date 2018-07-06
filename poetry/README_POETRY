@@ -1,0 +1,77 @@
+https://cloud.google.com/blog/big-data/2018/02/cloud-poetry-training-and-hyperparameter-tuning-custom-text-models-on-cloud-ml-engine
+
+https://tensorflow.github.io/tensor2tensor/cloud_mlengine.html
+
+(tensor2tensor_3) fciannel@fciannelubuntu:~/src/t2t/t2t_testing_pycharm$ pwd
+/home/fciannel/src/t2t/t2t_testing_pycharm
+
+(tensor2tensor_3) fciannel@fciannelubuntu:~/src/t2t/t2t_testing_pycharm$ tree
+.
+├── data
+│   └── poetry
+│       ├── input.txt
+│       ├── output.txt
+│       └── raw.txt
+├── poetry
+│   ├── __init__.py
+│   ├── README
+│   ├── setup.py
+│   └── trainer
+│       ├── __init__.py
+│       ├── problem.py
+│       └── __pycache__
+
+PROBLEM=poetry_line_problem
+USR_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/poetry/trainer
+DATA_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/t2t_data
+TMP_DIR=/tmp/t2t_tmp
+BUCKET=gvs-cs-cisco-fciannel
+MODEL=transformer
+HPARAMS=transformer_poetry
+DECODE_FILE=rumi.txt
+OUTDIR=poetry_out
+rm -rf $DATA_DIR
+mkdir -p $DATA_DIR $TMP_DIR
+
+t2t-datagen \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --data_dir=$DATA_DIR \
+ --tmp_dir=$TMP_DIR
+
+gsutil cp -r t2t_data/ gs://gvs-cs-cisco-fciannel/poetry
+
+
+# Train Locally
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/poetry \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --train_steps=7500
+
+# Train Remotely
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/poetry \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --train_steps=7500 --cloud_mlengine --worker_gpu=1
+
+
+BEAM_SIZE=4
+ALPHA=0.6
+t2t-decoder \
+ --data_dir=gs://${BUCKET}/poetry \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --t2t_usr_dir=./poetry/trainer \
+ --decode_hparams="beam_size=$BEAM_SIZE,alpha=$ALPHA" \
+ --decode_from_file=gs://${BUCKET}/${DECODE_FILE} \
+ --cloud_mlengine --worker_gpu=1

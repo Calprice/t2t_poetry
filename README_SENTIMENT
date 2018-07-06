@@ -1,0 +1,131 @@
+https://github.com/tensorflow/tensor2tensor#walkthrough
+
+https://tensorflow.github.io/tensor2tensor/cloud_mlengine.html
+
+pwd
+/home/fciannel/src/tensor2tensor/tensor2tensor
+
+PROBLEM=sentiment_imdb
+USR_DIR=/home/fciannel/src/tensor2tensor/tensor2tensor/data_generators
+LOCAL_DATA_DIR=/home/fciannel/src/t2t/t2t_testing_pycharm/t2t_data_imdb
+REMOTE_DATA_DIR=imdb_data
+TMP_DIR=/tmp/t2t_tmp
+BUCKET=gvs-cs-cisco-fciannel
+MODEL=transformer_encoder
+HPARAMS=transformer_tiny
+OUTDIR=sentiment_imdb_out
+rm -rf $LOCAL_DATA_DIR
+mkdir -p $LOCAL_DATA_DIR $TMP_DIR
+REMOTE_DECODE_DIR=imdb_decode
+DECODE_FILE_NAME=decode_this.txt
+
+
+t2t-datagen \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --data_dir=$LOCAL_DATA_DIR \
+ --tmp_dir=$TMP_DIR
+
+gsutil cp -r $LOCAL_DATA_DIR gs://${BUCKET}/${REMOTE_DATA_DIR}
+
+# Train Locally
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR}
+
+# Train Remotely
+t2t-trainer \
+ --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+ --t2t_usr_dir=$USR_DIR \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --cloud_mlengine --worker_gpu=1
+
+
+DECODE_FILE=${LOCAL_DATA_DIR}/${DECODE_FILE_NAME}
+
+echo "This film reminded me so much of \"A History of Violence\" which pretended to be a close study of violence and violent behavior but ended up just being nothing short of a cheap action movie masquerading as some thinking film on violence. Dustin Hoffman and his new British bride move to a small English town and encounter endless harassment from the local drunks who do nothing but hang at the pub all day and make trouble. Don't these men have a job? Anyway, Dustin takes all he can take and by the end of the film he holds up in his house and fights off each one of the drunk attackers by such gruesome means as boiling whiskey poured over someone, feet being blown off by a shotgun and someones head getting caught in a bear trap. Funny that someone would have a need for such a large bear trap in a small British town except maybe put a mans head in it.<br /><br />Sam Peckinpah who made the "Wild Bunch" which also covered the topic of blood letting violence in which no one was spared. But it was done with style, and you believed it. Straw Dogs is not believable. First of all the location is wrong and does not work. Why place it in England? I would think maybe in some inner city location or a small town in the American South in the 1930's or something. Second it is not in my view ever really explained clearly why these men are so quick to violence except maybe they got drunk and felt a need to kill Hoffman and rape his wife.<br /><br />Sam Peckinpah missed the mark on this one." > $DECODE_FILE
+
+gsutil cp -r ${DECODE_FILE} gs://${BUCKET}/${REMOTE_DECODE_DIR}/${DECODE_FILE_NAME}
+
+BEAM_SIZE=4
+ALPHA=0.6
+
+t2t-decoder \
+  --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+  --problem=$PROBLEM \
+  --model=$MODEL \
+  --hparams_set=$HPARAMS \
+  --output_dir=gs://${BUCKET}/${OUTDIR} \
+  --decode_hparams="beam_size=$BEAM_SIZE,alpha=$ALPHA" \
+  --decode_from_file=gs://${BUCKET}/${REMOTE_DECODE_DIR}/${DECODE_FILE_NAME} \
+  --cloud_mlengine --worker_gpu=1
+
+
+
+https://github.com/tensorflow/tensor2tensor/tree/master/tensor2tensor/serving
+
+t2t-exporter \
+  --model=$MODEL \
+  --hparams_set=$HPARAMS \
+  --problem=$PROBLEM \
+  --data_dir=gs://${BUCKET}/${REMOTE_DATA_DIR} \
+  --output_dir=gs://${BUCKET}/${OUTDIR}
+
+The model is now exported to ${OUTDIR}/export
+
+EXPORTS_PATH=gs://${BUCKET}/${OUTDIR}/export/Servo
+ORIGIN=`gsutil ls ${EXPORTS_PATH} | tail -1`
+
+MODEL_NAME=sentiment_imdb
+gcloud ml-engine models create $MODEL_NAME
+
+
+VERSION=v3
+gcloud ml-engine versions create $VERSION \
+  --model $MODEL_NAME \
+  --runtime-version 1.6 \
+  --origin $ORIGIN
+
+VERSION=v1
+gcloud ml-engine versions create $VERSION \
+  --model $MODEL_NAME \
+  --origin $ORIGIN
+
+
+t2t-query-server \
+  --cloud_mlengine_model_name $MODEL_NAME \
+  --cloud_mlengine_model_version $VERSION \
+  --problem $PROBLEM \
+  --data_dir gs://${BUCKET}/${REMOTE_DATA_DIR}
+
+  --inputs_once "I am positive"
+
+
+
+
+
+===================================================================
+
+
+# See the translations
+cat translation.en
+
+BEAM_SIZE=4
+ALPHA=0.6
+t2t-decoder \
+ --data_dir=gs://${BUCKET}/poetry \
+ --problem=$PROBLEM \
+ --model=$MODEL \
+ --hparams_set=$HPARAMS \
+ --output_dir=gs://${BUCKET}/${OUTDIR} \
+ --t2t_usr_dir=./poetry/trainer \
+ --decode_hparams="beam_size=$BEAM_SIZE,alpha=$ALPHA" \
+ --decode_from_file=gs://${BUCKET}/${DECODE_FILE} \
+ --cloud_mlengine --worker_gpu=1
